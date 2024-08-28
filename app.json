@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "ROADGUARD",
+    "slug": "ROADGUARD",
+    "version": "1.0.0",
+     "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "extra": {
+      "eas": {
+        "projectId": "040d11b4-94c9-471b-b0e1-233bd69d0b57"
+      }
+    },
+    "owner": "melvinsagnoy",
+    "android": {
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
+      "package": "com.melvinsagnoy.ROADGUARD"
+    },
+    "ios": {
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "This app needs access to your location to show your position on the map."
+      }
+    },
+    "plugins": [
+      "expo-font"
+    ]
+  }
+}
