@@ -1,7 +1,8 @@
 import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { auth } from '../firebaseConfig'; // Import auth from your firebaseConfig file
+import { auth } from '../firebaseConfig';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons'; // Import icon library
 
 const VerificationOptionsScreen = ({ navigation }) => {
 
@@ -55,12 +56,14 @@ const VerificationOptionsScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Choose Verification Method</Text>
-      <TouchableOpacity style={styles.optionButton} onPress={handleFingerprintVerify}>
-        <Text style={styles.optionText}>Verify with Fingerprint</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.optionButton} onPress={handlePasscodeVerify}>
-        <Text style={styles.optionText}>Verify with Passcode</Text>
-      </TouchableOpacity>
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity style={styles.optionButton} onPress={handleFingerprintVerify}>
+          <Icon name="fingerprint" size={90} color="#E0C55B" />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.optionButton} onPress={handlePasscodeVerify}>
+          <Icon name="lock" size={90} color="#E0C55B" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
@@ -78,17 +81,18 @@ const styles = StyleSheet.create({
     color: 'white',
     marginBottom: 30,
   },
-  optionButton: {
-    backgroundColor: '#E0C55B',
-    paddingVertical: 15,
-    paddingHorizontal: 40,
-    borderRadius: 8,
-    marginBottom: 20,
+  buttonContainer: {
+    flexDirection: 'row', // Align buttons horizontally
+    justifyContent: 'center', // Center the buttons horizontally
+    alignItems: 'center', // Center the buttons vertically
   },
-  optionText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'black',
+  optionButton: {
+    paddingVertical: 15,
+    paddingHorizontal: 25,
+    borderRadius: 8,
+    marginHorizontal: 10, // Space between buttons
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

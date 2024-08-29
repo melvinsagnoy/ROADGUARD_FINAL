@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Modal, View, Text, Button, StyleSheet, ScrollView } from 'react-native';
+import { Modal, View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 
 const CombinedModal = ({ visible, onClose, onAgree }) => {
   const scrollViewRef = useRef(null);
@@ -10,7 +10,7 @@ const CombinedModal = ({ visible, onClose, onAgree }) => {
     const viewportHeight = layoutMeasurement.height;
     const scrollPosition = contentOffset.y;
 
-    if (scrollPosition + viewportHeight >= contentHeight - 50) { // 50 is a buffer
+    if (scrollPosition + viewportHeight >= contentHeight - 50) {
       onAgree();
     }
   };
@@ -20,6 +20,7 @@ const CombinedModal = ({ visible, onClose, onAgree }) => {
       transparent={true}
       visible={visible}
       onRequestClose={onClose}
+      animationType="fade"
     >
       <View style={styles.modalContainer}>
         <View style={styles.modalContent}>
@@ -83,7 +84,9 @@ const CombinedModal = ({ visible, onClose, onAgree }) => {
               If you have any questions about this Privacy Policy, please contact us at [Your Contact Information].
             </Text>
           </ScrollView>
-          <Button title="Close" onPress={onClose} />
+          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+            <Text style={styles.closeButtonText}>Close</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </Modal>
@@ -95,23 +98,47 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)', // Darkened the overlay color slightly
   },
   modalContent: {
-    width: '80%',
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    width: '85%',
+    maxHeight: '70%',
+    backgroundColor: '#2b2b2b', // Darker background for the modal content
+    borderRadius: 12,
     padding: 20,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 10,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
+    color: '#e5e5e5', // Light gray for the title text
     marginBottom: 10,
+    textAlign: 'center',
   },
   modalText: {
     fontSize: 16,
-    marginBottom: 20,
+    color: '#c7c7c7', // Slightly darker gray for the body text
+    lineHeight: 24,
+    marginBottom: 15,
+    textAlign: 'justify',
+  },
+  closeButton: {
+    backgroundColor: '#007BFF',
+    borderRadius: 25,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  closeButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 

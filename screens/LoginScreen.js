@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, Image } from 'react-native';
 import { Formik } from 'formik';
 import * as yup from 'yup';
-import { auth } from '../firebaseConfig';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFonts } from 'expo-font';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { firestore } from '../firebaseConfig';
 
 const loginValidationSchema = yup.object().shape({
   emailOrPhone: yup.string().required('Email or phone number is required'),
@@ -17,31 +18,60 @@ const LoginScreen = ({ navigation }) => {
   const [fontsLoaded] = useFonts({
     Poppins: require('../assets/fonts/Poppins-Regular.ttf'),
   });
+  const rotateAnim = useRef(new Animated.Value(0)).current;
 
   const handleLogin = async (values) => {
     setLoading(true);
+    Animated.loop(
+      Animated.timing(rotateAnim, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      })
+    ).start();
+
+    const auth = getAuth();
+
     try {
-      // Check if input is an email or phone number
+      let userCredential;
       if (values.emailOrPhone.includes('@')) {
         // Login with email
-        await signInWithEmailAndPassword(auth, values.emailOrPhone, values.password);
+        userCredential = await signInWithEmailAndPassword(auth, values.emailOrPhone, values.password);
       } else {
-        // For simplicity, treating phone numbers as email in this example
-        // Firebase Authentication only supports email/password and SMS-based authentication
-        Alert.alert('Phone number login is not implemented in this example.');
-        setLoading(false);
-        return;
+        // Login with phone number
+        const phoneNumber = values.emailOrPhone.trim(); // Remove any extra spaces
+        
+        // Query Firestore for the document where the phoneNumber matches
+        const q = query(collection(firestore, 'users'), where('phoneNumber', '==', phoneNumber));
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+          throw new Error('No user found with this phone number.');
+        }
+
+        let userData;
+        querySnapshot.forEach((doc) => {
+          userData = doc.data(); // Assuming only one document matches the phone number
+        });
+
+        // If the phone number exists in Firestore, log in with email/password
+        userCredential = await signInWithEmailAndPassword(auth, userData.email, values.password);
       }
 
-      await AsyncStorage.setItem('user', JSON.stringify({ email: values.emailOrPhone })); // Save user data in local storage
-      console.log('User data saved:', { email: values.emailOrPhone }); // Debugging line
+      await AsyncStorage.setItem('user', JSON.stringify({ email: values.emailOrPhone }));
+      console.log('User data saved:', { email: values.emailOrPhone });
       setLoading(false);
-      navigation.navigate('VerificationOptions'); // Navigate to verification options
+      navigation.navigate('VerificationOptions');
     } catch (error) {
       setLoading(false);
       Alert.alert('Login Error', error.message);
     }
   };
+
+  const rotateInterpolate = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   if (!fontsLoaded) {
     return null; // Load font here or render a loading indicator
@@ -61,7 +91,9 @@ const LoginScreen = ({ navigation }) => {
                 <Text style={[styles.label, styles.title, { fontFamily: 'Poppins' }]}>Sign-In</Text>
               </View>
 
-              <Text style={[styles.label, styles.emailOrPhoneLabel, { fontFamily: 'Poppins' }]}>Email or Phone Number</Text>
+              <Text style={[styles.label, styles.emailOrPhoneLabel, { fontFamily: 'Poppins' }]}>
+                Email or Phone Number
+              </Text>
               <TextInput
                 style={styles.input}
                 placeholder="Enter your email or phone number"
@@ -69,9 +101,12 @@ const LoginScreen = ({ navigation }) => {
                 onBlur={handleBlur('emailOrPhone')}
                 value={values.emailOrPhone}
                 placeholderTextColor="#7C7A7A"
-                fontFamily='Poppins'
+                fontFamily="Poppins"
+                keyboardType="email-address"
               />
-              {touched.emailOrPhone && errors.emailOrPhone && <Text style={styles.errorText}>{errors.emailOrPhone}</Text>}
+              {touched.emailOrPhone && errors.emailOrPhone && (
+                <Text style={styles.errorText}>{errors.emailOrPhone}</Text>
+              )}
 
               <Text style={[styles.label, styles.passLabel, { fontFamily: 'Poppins' }]}>Password</Text>
               <TextInput
@@ -82,16 +117,24 @@ const LoginScreen = ({ navigation }) => {
                 value={values.password}
                 secureTextEntry
                 placeholderTextColor="#7C7A7A"
-                fontFamily='Poppins'
+                fontFamily="Poppins"
               />
-              {touched.password && errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
+              {touched.password && errors.password && (
+                <Text style={styles.errorText}>{errors.password}</Text>
+              )}
 
               <TouchableOpacity
                 style={[styles.button, { backgroundColor: '#E0C55B' }]}
                 onPress={handleSubmit}
                 disabled={loading}
               >
-                <Text style={styles.buttonText}>Log-in</Text>
+                {loading ? (
+                  <Animated.View style={[styles.loadingContainer, { transform: [{ rotate: rotateInterpolate }] }]}>
+                    <Image source={require('../assets/tire.png')} style={styles.loadingImage} />
+                  </Animated.View>
+                ) : (
+                  <Text style={styles.buttonText}>Log-in</Text>
+                )}
               </TouchableOpacity>
             </>
           )}
@@ -183,11 +226,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 4,
     elevation: 5,
+    position: 'relative', // Ensure positioning for loading indicator
   },
   buttonText: {
     color: 'black',
     fontSize: 20,
     fontWeight: 'bold',
+  },
+  loadingContainer: {
+    position: 'absolute',
+  },
+  loadingImage: {
+    width: 30,
+    height: 30,
   },
 });
 

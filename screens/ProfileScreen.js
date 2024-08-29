@@ -168,7 +168,7 @@ const [phoneNumber, setPhoneNumber] = useState('');
       quality: 1,
     });
 
-    if (!result.cancelled && result.assets && result.assets.length > 0) {
+    if (!result.canceled && result.assets && result.assets.length > 0) {
       const pickedImageUri = result.assets[0].uri;
       setNewProfileImageUri(pickedImageUri);
 
@@ -183,44 +183,44 @@ const [phoneNumber, setPhoneNumber] = useState('');
   }
 };
 
-  const uploadImage = async (uri) => {
-    try {
-      console.log('Starting image upload...');
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const storageRef = ref(storage, `images/${auth.currentUser.email}`);
-      await uploadBytes(storageRef, blob);
-      const downloadURL = await getDownloadURL(storageRef);
-      console.log('Image uploaded successfully. Download URL:', downloadURL);
-      return downloadURL;
-    } catch (error) {
-      console.error('Error uploading image:', error);
-      throw error;
-    }
-  };
+const uploadImage = async (uri) => {
+  try {
+    console.log('Starting image upload...');
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    const storageRef = ref(storage, `images/${auth.currentUser.email}`);
+    await uploadBytes(storageRef, blob);
+    const downloadURL = await getDownloadURL(storageRef);
+    console.log('Image uploaded successfully. Download URL:', downloadURL);
+    return downloadURL;
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    throw error;
+  }
+};
 
-  const updateProfileImage = async (downloadURL) => {
-    const email = auth.currentUser.email;
-    const userRef = doc(firestore, 'users', email);
+const updateProfileImage = async (downloadURL) => {
+  const email = auth.currentUser.email;
+  const userRef = doc(firestore, 'users', email);
 
-    try {
-      const docSnap = await getDoc(userRef);
-      if (docSnap.exists()) {
-        await updateDoc(userRef, {
-          photoURL: downloadURL,
-        });
-        console.log('Profile image URL updated in Firestore:', downloadURL);
-      } else {
-        await setDoc(userRef, {
-          photoURL: downloadURL,
-        });
-        console.log('Profile image URL set in new Firestore document:', downloadURL);
-      }
-      setImageUri(downloadURL);
-    } catch (error) {
-      console.error('Error updating profile image:', error);
+  try {
+    const docSnap = await getDoc(userRef);
+    if (docSnap.exists()) {
+      await updateDoc(userRef, {
+        photoURL: downloadURL,
+      });
+      console.log('Profile image URL updated in Firestore:', downloadURL);
+    } else {
+      await setDoc(userRef, {
+        photoURL: downloadURL,
+      });
+      console.log('Profile image URL set in new Firestore document:', downloadURL);
     }
-  };
+    setImageUri(downloadURL);
+  } catch (error) {
+    console.error('Error updating profile image:', error);
+  }
+};
   const handleNavigation = (screen) => {
   if (isProfileComplete) {
     navigation.navigate(screen);
@@ -369,29 +369,40 @@ const [phoneNumber, setPhoneNumber] = useState('');
       </Modal>
 
       <Modal
-          animationType="slide"
-          transparent={true}
-          visible={editMode}
-          onRequestClose={() => setEditMode(false)}
-        >
-          <View style={styles.editProfileContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter new display name"
-              value={newName}
-              onChangeText={setNewName}
-            />
-            <TouchableOpacity style={styles.imageButton} onPress={pickImage}>
-              <Text style={styles.imageButtonText}>Change Profile Image</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.saveButton} onPress={saveProfileChanges}>
-              <Text style={styles.saveButtonText}>Save</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelButton} onPress={() => setEditMode(false)}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </Modal>
+  animationType="slide"
+  transparent={true}
+  visible={editMode}
+  onRequestClose={() => setEditMode(false)}
+>
+  <View style={styles.editProfileContainer}>
+    <TextInput
+      style={styles.input}
+      placeholder="Enter new display name"
+      value={newName}
+      onChangeText={setNewName}
+    />
+    <TouchableOpacity style={styles.imageButton} onPress={pickImage}>
+      <Text style={styles.imageButtonText}>Change Profile Image</Text>
+    </TouchableOpacity>
+    <TouchableOpacity style={styles.saveButton} onPress={saveProfileChanges}>
+      <Text style={styles.saveButtonText}>Save</Text>
+    </TouchableOpacity>
+    <TouchableOpacity
+      style={[
+        styles.cancelButton,
+        { opacity: needsNameUpdate || needsImageUpdate ? 0.5 : 1 } // Adjust opacity based on profile completion
+      ]}
+      onPress={() => {
+        if (!(needsNameUpdate || needsImageUpdate)) {
+          setEditMode(false);
+        }
+      }}
+      disabled={needsNameUpdate || needsImageUpdate} // Disable button based on profile completion
+    >
+      <Text style={styles.cancelButtonText}>Cancel</Text>
+    </TouchableOpacity>
+  </View>
+</Modal>
 
       <NavBar navigation={navigation} isProfileComplete={isProfileComplete} />
     </View>

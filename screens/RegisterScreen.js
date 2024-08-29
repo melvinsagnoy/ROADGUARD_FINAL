@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { View, TextInput, TouchableOpacity, Text, StyleSheet, Alert } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { View, TextInput, TouchableOpacity, Text, StyleSheet, Alert, Animated, Image } from 'react-native';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../firebaseConfig';
+import { auth, firestore } from '../firebaseConfig';
 import Icon from 'react-native-vector-icons/Ionicons';
 import CombinedModal from './CombinedModal'; // Updated import
+import { doc, setDoc } from 'firebase/firestore';
 
 const RegisterScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
@@ -15,6 +16,7 @@ const RegisterScreen = ({ navigation }) => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const rotateAnim = useRef(new Animated.Value(0)).current;
 
   const handleRegisterButtonPress = async () => {
     if (!email || !phoneNumber || !password || !confirmPassword) {
@@ -34,12 +36,35 @@ const RegisterScreen = ({ navigation }) => {
 
     try {
       setLoading(true);
-      await createUserWithEmailAndPassword(auth, email, password);
+      Animated.loop(
+        Animated.timing(rotateAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        })
+      ).start();
+
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      console.log('User registered with email:', email);
+
+      // Save phone number to Firestore
+      await setDoc(doc(firestore, 'users', user.uid), {
+        email: email,
+        phoneNumber: phoneNumber,
+        needsProfileUpdate: true, // Add this field to indicate profile update is required
+      });
+
+      console.log('Phone number saved:', phoneNumber);
+
       setLoading(false);
+      rotateAnim.stopAnimation();
       Alert.alert('Registration Successful', 'You have registered successfully!');
-      navigation.navigate('Passcode', { email: email });
+      navigation.navigate('ProfileUpdate'); // Navigate to ProfileUpdateScreen
     } catch (error) {
       setLoading(false);
+      rotateAnim.stopAnimation();
       console.error('Error registering user:', error);
       Alert.alert('Registration Error', error.message);
     }
@@ -58,15 +83,17 @@ const RegisterScreen = ({ navigation }) => {
     setTermsAccepted(!termsAccepted);
   };
 
-  // Function to handle phone number input
   const handlePhoneNumberChange = (text) => {
-    // Remove non-numeric characters
     const cleanedText = text.replace(/[^0-9]/g, '');
-    // Limit to 11 digits
     if (cleanedText.length <= 11) {
       setPhoneNumber(cleanedText);
     }
   };
+
+  const rotateInterpolate = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   return (
     <View style={styles.container}>
@@ -83,8 +110,8 @@ const RegisterScreen = ({ navigation }) => {
         placeholder="Phone Number"
         onChangeText={handlePhoneNumberChange}
         value={phoneNumber}
-        keyboardType="numeric" // Ensure only numbers are inputted
-        maxLength={11} // Limit input to 11 digits
+        keyboardType="numeric"
+        maxLength={11}
       />
       <View style={styles.passwordContainer}>
         <TextInput
@@ -135,7 +162,13 @@ const RegisterScreen = ({ navigation }) => {
         onPress={handleRegisterButtonPress}
         disabled={loading}
       >
-        <Text style={styles.buttonText}>{loading ? 'Registering...' : 'Register'}</Text>
+        {loading ? (
+          <Animated.View style={[styles.loadingContainer, { transform: [{ rotate: rotateInterpolate }] }]}>
+            <Image source={require('../assets/tire.png')} style={styles.loadingImage} />
+          </Animated.View>
+        ) : (
+          <Text style={styles.buttonText}>Register</Text>
+        )}
       </TouchableOpacity>
       <TouchableOpacity onPress={() => navigation.navigate('Login')}>
         <Text style={styles.loginText}>Already have an account? Login</Text>
@@ -201,6 +234,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 8,
     marginBottom: 10,
+    position: 'relative',
   },
   buttonText: {
     fontSize: 18,
@@ -237,7 +271,16 @@ const styles = StyleSheet.create({
   },
   link: {
     color: '#E0C55B',
-    textDecorationLine: 'underline',
+  },
+  loadingContainer: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingImage: {
+    width: 50,
+    height: 50,
   },
 });
 

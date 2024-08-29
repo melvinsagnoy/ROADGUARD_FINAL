@@ -26,6 +26,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { ref, onValue, update, get, child, push, set, remove } from 'firebase/database';
 import { database } from '../firebaseConfig';
 import { format } from 'date-fns';
+import { BackHandler } from 'react-native';
 
 
 
@@ -62,7 +63,39 @@ const [filter, setFilter] = useState('newest'); // Default to 'newest'
   const [commentText, setCommentText] = useState(''); // State for comment input
   const [comments, setComments] = useState({}); 
   
+  
+  
 
+  useEffect(() => {
+    // Fetch posts and comments on component mount
+    fetchAllPosts();
+    fetchComments();
+
+    // Setup auth state listener
+    const unsubscribe = auth.onAuthStateChanged((authUser) => {
+      setUser(authUser);
+      if (authUser) {
+        fetchUserData(authUser.email);
+      }
+    });
+
+    // Add back button handler
+    const backAction = () => {
+      // Exit the app or handle the back press
+      BackHandler.exitApp();
+      return true; // Indicates that we have handled the event
+    };
+
+    BackHandler.addEventListener('hardwareBackPress', backAction);
+
+    // Clean up auth state listener and back button handler on unmount
+    return () => {
+      unsubscribe();
+      BackHandler.removeEventListener('hardwareBackPress', backAction);
+    };
+  }, [filter]);
+
+  
     useEffect(() => {
     // Fetch posts and comments on component mount
     fetchAllPosts();
@@ -471,7 +504,6 @@ const handleDeletePost = async (postId) => {
           </Text>
         </TouchableOpacity>
 
-        {/* Comment input and submit button */}
         {selectedPostId === post.id && (
           <View style={styles.commentInputContainer}>
             <TextInput
@@ -487,22 +519,24 @@ const handleDeletePost = async (postId) => {
         )}
 
         {/* Render comments */}
-        {comments[post.id] && comments[post.id].map((comment, index) => (
-          <View key={index} style={styles.commentItem}>
-            <Image
-              source={{ uri: comment.profileImage || 'https://via.placeholder.com/30' }}
-              style={styles.commentProfileIcon}
-            />
-            <View style={styles.commentTextContainer}>
-              <Text style={styles.commentUserName}>{comment.displayName || 'Anonymous'}</Text>
-              <Text style={styles.commentText}>{comment.text}</Text>
-              <Text style={styles.commentDate}>
-                {formatDate(comment.createdAt)}
-              </Text>
+        {comments[post.id] && comments[post.id]
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) // Sort by newest first
+          .slice(0, 3) // Take only the 3 newest comments
+          .map((comment, index) => (
+            <View key={index} style={styles.commentItem}>
+              <Image
+                source={{ uri: comment.profileImage || 'https://via.placeholder.com/30' }}
+                style={styles.commentProfileIcon}
+              />
+              <View style={styles.commentTextContainer}>
+                <Text style={styles.commentUserName}>{comment.displayName || 'Anonymous'}</Text>
+                <Text style={styles.commentText}>{comment.text}</Text>
+                <Text style={styles.commentDate}>
+                  {formatDate(comment.createdAt)}
+                </Text>
+              </View>
             </View>
-          </View>
-        ))}
-
+          ))}
       </View>
 
       {dropdownMenu === post.id && (

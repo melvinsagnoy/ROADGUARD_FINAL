@@ -7,7 +7,7 @@ import {
   StyleSheet,
   TouchableOpacity,
 } from 'react-native';
-import { Picker } from '@react-native-picker/picker'; // Import Picker
+import { Picker } from '@react-native-picker/picker'; 
 
 const EditPostModal = ({ visible, onClose, onSubmit, currentPostContent }) => {
   const [title, setTitle] = useState(currentPostContent.title);

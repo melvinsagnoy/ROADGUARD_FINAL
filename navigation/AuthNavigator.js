@@ -17,6 +17,7 @@ import PasscodeVerificationScreen from '../screens/PasscodeVerificationScreen';
 import GameScreen from '../screens/GameScreen';
 import SubscriptionScreen from '../screens/SubscriptionScreen';
 import EditPostModal from '../screens/EditPostModal';
+import ProfileUpdateScreen from '../screens/ProfileUpdateScreen';
 
 const Stack = createStackNavigator();
 
@@ -64,6 +65,7 @@ const AuthNavigator = ({ toggleTheme, isDarkTheme }) => {
           component={LoginScreen}
           options={{ headerShown: false }}
         />
+        <Stack.Screen name="ProfileUpdate" component={ProfileUpdateScreen} />
         <Stack.Screen
           name="Register"
           component={RegisterScreen}
