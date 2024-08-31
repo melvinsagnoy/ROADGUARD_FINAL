@@ -303,11 +303,11 @@ const updateProfileImage = async (downloadURL) => {
       </View>
       <View style={styles.buttonRow}>
         <TouchableOpacity
-            style={styles.button}
-            onPress={() => handleNavigation('RewardsScreen')}
-          >
-            <Text style={styles.buttonText}>Redeem Rewards</Text>
-          </TouchableOpacity>
+          style={styles.button}
+          onPress={() => handleNavigation('RewardsScreen')}
+        >
+          <Text style={styles.buttonText}>Redeem Rewards</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.button} onPress={() => handleNavigation('SubscriptionScreen')}>
           <Text style={styles.buttonText}>Subscribe</Text>
         </TouchableOpacity>
@@ -321,20 +321,13 @@ const updateProfileImage = async (downloadURL) => {
           <FontAwesome name="star" size={24} color="black" />
           <Text style={styles.optionText}>Leaderboards</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={styles.option} onPress={() => navigation.navigate('SendMessage', { recipient: { id: 'user_id', displayName: 'User Name', photoURL: 'user_photo_url' } })}>
+          <FontAwesome name="envelope" size={24} color="black" />
+          <Text style={styles.optionText}>Send Message</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.option}
-          onPress={async () => {
-            try {
-              await AsyncStorage.removeItem('userEmail');
-              auth.signOut().then(() => {
-                navigation.navigate('Landing');
-              }).catch((error) => {
-                console.error('Error logging out:', error);
-              });
-            } catch (error) {
-              console.error('Error clearing user credentials:', error);
-            }
-          }}
+          onPress={handleLogout}
         >
           <FontAwesome name="sign-out" size={24} color="black" />
           <Text style={styles.optionText}>Log out</Text>
@@ -601,7 +594,18 @@ phoneNumber: {
   fontSize: 16,
   color: '#555',
   marginBottom: 5,
-}
+},
+sendMessageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+  },
+  sendMessageText: {
+    marginLeft: 10,
+    fontSize: 16,
+  },
 });
 
 
