@@ -18,8 +18,9 @@ import GameScreen from '../screens/GameScreen';
 import SubscriptionScreen from '../screens/SubscriptionScreen';
 import EditPostModal from '../screens/EditPostModal';
 import ProfileUpdateScreen from '../screens/ProfileUpdateScreen';
-import SendMessageScreen from '../screens/SendMessageScreen';
-import ChatScreen from '../screens/ChatScreen'; // Import SendMessageScreen
+import ChatListScreen from '../screens/ChatListScreen';
+import ChatScreen from '../screens/ChatScreen';
+
 
 const Stack = createStackNavigator();
 
@@ -139,14 +140,14 @@ const AuthNavigator = ({ toggleTheme, isDarkTheme }) => {
           options={{ presentation: 'modal' }}
         />
         <Stack.Screen
-          name="SendMessage"
-          component={SendMessageScreen} // Add SendMessageScreen to navigator
-          options={{ title: 'Send Message' }}
+          name="ChatList" // This is the correct name
+          component={ChatListScreen}
+          options={{ headerShown: false }}
         />
         <Stack.Screen
           name="ChatScreen"
           component={ChatScreen}
-          options={{ title: 'Chat' }}
+          options={{ headerShown: false }}
         />
       </Stack.Navigator>
     </NavigationContainer>

@@ -8,11 +8,10 @@ const PasscodeInputScreen = ({ navigation, route }) => {
   const [confirmPasscode, setConfirmPasscode] = useState('');
   const [loading, setLoading] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
-  const [storedPasscode, setStoredPasscode] = useState(''); // Temporary storage for the passcode
-  const maxDigits = 4; // Define the maximum number of digits for the passcode
+  const [storedPasscode, setStoredPasscode] = useState('');
+  const maxDigits = 4;
   const rotateAnim = useRef(new Animated.Value(0)).current;
 
-  // Extract email from route params
   const email = route.params?.email || '';
 
   const handleNumberPress = (number) => {
@@ -40,56 +39,55 @@ const PasscodeInputScreen = ({ navigation, route }) => {
   };
 
   const handleConfirmPress = async () => {
-    if (isConfirming) {
-      if (confirmPasscode.length === maxDigits) {
-        if (confirmPasscode === storedPasscode) {
-          setLoading(true);
-          Animated.loop(
-            Animated.timing(rotateAnim, {
-              toValue: 1,
-              duration: 1000,
-              useNativeDriver: true,
-            })
-          ).start();
-          
-          try {
-            const user = auth.currentUser;
-            if (!user) {
-              throw new Error('User not authenticated');
-            }
-
-            // Register passcode in Firestore under user's email as document ID
-            const userDocRef = doc(firestore, 'users', email);
-            await setDoc(userDocRef, { passcode: storedPasscode });
-
-            setLoading(false);
-            navigation.navigate('Profile'); // Navigate to profile or home screen after successful verification
-          } catch (error) {
-            setLoading(false);
-            console.error('Error registering passcode:', error);
-            Alert.alert('Registration Error', 'Failed to register passcode.');
+  if (isConfirming) {
+    if (confirmPasscode.length === maxDigits) {
+      if (confirmPasscode === storedPasscode) {
+        setLoading(true);
+        Animated.loop(
+          Animated.timing(rotateAnim, {
+            toValue: 1,
+            duration: 1000,
+            useNativeDriver: true,
+          })
+        ).start();
+        
+        try {
+          const user = auth.currentUser;
+          if (!user) {
+            throw new Error('User not authenticated');
           }
-        } else {
-          Alert.alert('Passcode Mismatch', 'The passcodes do not match.');
-          // Reset states to allow user to re-enter passcode
-          setPasscode('');
-          setConfirmPasscode('');
-          setStoredPasscode('');
-          setIsConfirming(false);
+
+          const email = user.email; // Ensure this is valid and non-empty.
+          const userDocRef = doc(firestore, 'users', email); // Ensure this is correctly formed.
+          await setDoc(userDocRef, { passcode: storedPasscode });
+
+          setLoading(false);
+          navigation.navigate('ProfileUpdate');
+        } catch (error) {
+          setLoading(false);
+          console.error('Error registering passcode:', error);
+          Alert.alert('Registration Error', 'Failed to register passcode.');
         }
       } else {
-        Alert.alert('Incomplete Passcode', 'Please enter 4 digits.');
+        Alert.alert('Passcode Mismatch', 'The passcodes do not match.');
+        setPasscode('');
+        setConfirmPasscode('');
+        setStoredPasscode('');
+        setIsConfirming(false);
       }
     } else {
-      if (passcode.length === maxDigits) {
-        setStoredPasscode(passcode); // Store passcode temporarily
-        setIsConfirming(true);
-        setPasscode(''); // Clear the initial passcode for security reasons
-      } else {
-        Alert.alert('Incomplete Passcode', 'Please enter 4 digits.');
-      }
+      Alert.alert('Incomplete Passcode', 'Please enter 4 digits.');
     }
-  };
+  } else {
+    if (passcode.length === maxDigits) {
+      setStoredPasscode(passcode);
+      setIsConfirming(true);
+      setPasscode('');
+    } else {
+      Alert.alert('Incomplete Passcode', 'Please enter 4 digits.');
+    }
+  }
+};
 
   const rotateInterpolate = rotateAnim.interpolate({
     inputRange: [0, 1],
@@ -100,12 +98,10 @@ const PasscodeInputScreen = ({ navigation, route }) => {
     <View style={styles.container}>
       <Text style={styles.title}>{isConfirming ? 'Confirm Passcode' : 'Set Passcode'}</Text>
       <View style={styles.passcodeContainer}>
-        {/* Display passcode circles */}
         {Array.from({ length: maxDigits }).map((_, index) => (
           <View key={index} style={[styles.passcodeCircle, (isConfirming ? confirmPasscode : passcode).length > index && styles.passcodeFilled]} />
         ))}
       </View>
-      {/* Number grid */}
       <View style={styles.numberGrid}>
         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((number) => (
           <TouchableOpacity key={number} style={styles.numberButton} onPress={() => handleNumberPress(String(number))}>
@@ -119,7 +115,6 @@ const PasscodeInputScreen = ({ navigation, route }) => {
           <Text style={styles.numberText}>0</Text>
         </TouchableOpacity>
       </View>
-      {/* Confirm button */}
       <TouchableOpacity style={styles.confirmButton} onPress={handleConfirmPress} disabled={loading}>
         {loading ? (
           <Animated.View style={[styles.loadingContainer, { transform: [{ rotate: rotateInterpolate }] }]}>
@@ -138,13 +133,13 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f0f0f0',
-    paddingHorizontal: 20,
+    backgroundColor: '#545151',
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 20,
+    color: 'white',
+    marginBottom: 30,
   },
   passcodeContainer: {
     flexDirection: 'row',
@@ -159,28 +154,28 @@ const styles = StyleSheet.create({
     marginHorizontal: 10,
   },
   passcodeFilled: {
-    backgroundColor: '#E0C55B', // Change color to indicate filled circle
+    backgroundColor: '#E0C55B',
   },
   numberGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
     marginBottom: 20,
-    width: '80%', // Ensure the grid is centered
+    width: '80%',
   },
   numberButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     borderColor: '#E0C55B',
     justifyContent: 'center',
     alignItems: 'center',
-    margin: 10,
+    margin: 15,
   },
   numberText: {
     fontSize: 24,
-    color: 'white'
+    color: 'white',
   },
   confirmButton: {
     width: '80%',
@@ -188,12 +183,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#E0C55B',
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 8,
-    position: 'relative', // Ensure positioning for loading indicator
+    borderRadius: 20,
+    marginTop: 20,
+    position: 'relative',
   },
   confirmButtonText: {
     fontSize: 18,
-    color: '#FFF',
+    color: '#000',
   },
   loadingContainer: {
     position: 'absolute',

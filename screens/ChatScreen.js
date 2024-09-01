@@ -1,309 +1,433 @@
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Image,
-  SafeAreaView,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-  Keyboard,
-  TouchableWithoutFeedback,
-  ScrollView,
-} from 'react-native';
-import { getDatabase, ref, onValue, push, set, serverTimestamp } from 'firebase/database';
-import { auth } from '../firebaseConfig';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, Image, Alert, Modal, Button } from 'react-native';
+import { ref, onValue, push, set, get } from 'firebase/database';
+import { getAuth } from 'firebase/auth';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { database } from '../firebaseConfig';
+import { useNavigation } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
+import { formatDistanceToNow, parseISO } from 'date-fns';
+import { FontAwesome, MaterialIcons } from '@expo/vector-icons'; // Import icons
 
-const sanitizePath = (path) => path.replace(/[.#$[\]]/g, '_');
+const getCurrentUserEmail = () => {
+  const auth = getAuth();
+  const user = auth.currentUser;
+  return user ? user.email : null;
+};
 
-const ChatScreen = ({ route, navigation }) => {
-  const { recipient } = route.params;
-  const [message, setMessage] = useState('');
-  const [sending, setSending] = useState(false);
+const uploadImageToStorage = async (uri) => {
+  const storage = getStorage();
+  const response = await fetch(uri);
+  const blob = await response.blob();
+  const imageRef = storageRef(storage, `chat-images/${Date.now()}`);
+  await uploadBytes(imageRef, blob);
+  const imageUrl = await getDownloadURL(imageRef);
+  return imageUrl;
+};
+
+const ChatScreen = ({ route }) => {
+  const { chatId } = route.params;
   const [messages, setMessages] = useState([]);
-  const [scrolling, setScrolling] = useState(true); // Track if user is at the bottom
-  const db = getDatabase();
-  const scrollViewRef = useRef(null);
+  const [newMessage, setNewMessage] = useState('');
+  const [currentUserEmail, setCurrentUserEmail] = useState(getCurrentUserEmail());
+  const [chatDetails, setChatDetails] = useState({});
+  const [replyTo, setReplyTo] = useState(null);
+  const [imagePreviewUri, setImagePreviewUri] = useState(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedImageUri, setSelectedImageUri] = useState(null);
+  const navigation = useNavigation();
 
   useEffect(() => {
-    const userEmail = auth.currentUser.email;
-    const sanitizedEmail = sanitizePath(userEmail);
-    const sanitizedRecipientId = sanitizePath(recipient.id);
-    const chatId = [sanitizedEmail, sanitizedRecipientId].sort().join('_');
+    const messagesRef = ref(database, `chats/${chatId}/messages`);
 
-    const messagesRef = ref(db, `chats/${chatId}`);
     const unsubscribe = onValue(messagesRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        const msgList = Object.keys(data).map(key => ({
-          id: key,
-          ...data[key]
-        }));
-        setMessages(msgList);
-        if (scrolling) {
-          setTimeout(() => {
-            scrollViewRef.current?.scrollToEnd({ animated: true });
-          }, 100);
-        }
+        const messageList = Object.entries(data).map(([id, message]) => ({ id, ...message }));
+        messageList.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        setMessages(messageList);
       } else {
         setMessages([]);
       }
     });
 
     return () => unsubscribe();
-  }, [recipient.id, db, scrolling]);
+  }, [chatId]);
+
+  useEffect(() => {
+    const chatRef = ref(database, `chats/${chatId}`);
+    const unsubscribe = onValue(chatRef, (snapshot) => {
+      const data = snapshot.val();
+      setChatDetails(data || {});
+    });
+
+    return () => unsubscribe();
+  }, [chatId]);
 
   const handleSend = async () => {
-    if (!message.trim()) {
+  if (newMessage.trim() || imagePreviewUri) {
+    try {
+      let imageUrl = null;
+      if (imagePreviewUri) {
+        imageUrl = await uploadImageToStorage(imagePreviewUri);
+      }
+
+      // Set the message text to 'Sent a Photo' if an image is included
+      const messageText = imagePreviewUri ? 'Sent a Photo' : newMessage;
+
+      const messageData = {
+        text: messageText,
+        image: imageUrl,
+        senderEmail: currentUserEmail,
+        timestamp: new Date().toISOString(),
+        replyTo: replyTo ? replyTo.id : null,
+      };
+
+      const messagesRef = ref(database, `chats/${chatId}/messages`);
+      const newMessageRef = push(messagesRef);
+      await set(newMessageRef, messageData);
+
+      const chatRef = ref(database, `chats/${chatId}`);
+      const chatSnapshot = await get(chatRef);
+      const chatData = chatSnapshot.val();
+
+      await set(chatRef, {
+        ...chatData,
+        lastMessage: {
+          ...messageData,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      setNewMessage('');
+      setImagePreviewUri(null);
+      setReplyTo(null);
+    } catch (error) {
+      console.error('Error sending message:', error);
+    }
+  }
+};
+
+  const handleReply = (message) => {
+    setNewMessage(`Replying to: ${message.text}`);
+    setReplyTo(message);
+  };
+
+  const handleSelectImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission required', 'We need access to your media library to upload images.');
       return;
     }
 
-    setSending(true);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 1,
+    });
 
-    try {
-      const userEmail = auth.currentUser.email;
-      const sanitizedEmail = sanitizePath(userEmail);
-      const sanitizedRecipientId = sanitizePath(recipient.id);
-      const chatId = [sanitizedEmail, sanitizedRecipientId].sort().join('_');
-      const messagesRef = ref(db, `chats/${chatId}`);
-      
-      const newMessageRef = push(messagesRef);
-      await set(newMessageRef, {
-        senderId: sanitizedEmail,
-        content: message,
-        timestamp: serverTimestamp()
-      });
-
-      setMessage('');
-      Keyboard.dismiss();
-    } catch (error) {
-      console.error('Error sending message:', error);
-    } finally {
-      setSending(false);
+    if (!result.canceled) {
+      const { uri } = result.assets[0];
+      setImagePreviewUri(uri);
     }
   };
 
-  const handleKeyboardDismiss = () => {
-    Keyboard.dismiss();
+  const handleTakePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission required', 'We need access to your camera to take photos.');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      const { uri } = result.assets[0];
+      setImagePreviewUri(uri);
+    }
   };
 
-  const handleScroll = (event) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    const isAtBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - 50; // Adjust tolerance as needed
-    setScrolling(isAtBottom);
+  const formatTime = (timestamp) => {
+    return formatDistanceToNow(parseISO(timestamp), { addSuffix: true });
   };
 
-  const renderMessageItem = (item) => {
-    const isSentByCurrentUser = item.senderId === sanitizePath(auth.currentUser.email);
+  const openImageModal = (uri) => {
+    setSelectedImageUri(uri);
+    setModalVisible(true);
+  };
 
-    return (
-      <View
-        key={item.id}
-        style={[
-          styles.messageItem,
-          isSentByCurrentUser ? styles.sentMessage : styles.receivedMessage,
-        ]}
-      >
-        <View style={styles.messageBubble}>
-          <Text style={styles.messageText}>{item.content}</Text>
-          <Text style={styles.messageTimestamp}>
-            {item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : ''}
-          </Text>
-        </View>
-        {isSentByCurrentUser ? (
-          auth.currentUser.photoURL ? (
-            <Image source={{ uri: auth.currentUser.photoURL }} style={styles.messagePhoto} />
-          ) : null
-        ) : (
-          recipient.photoURL ? (
-            <Image source={{ uri: recipient.photoURL }} style={styles.messagePhoto} />
-          ) : null
-        )}
-      </View>
-    );
+  const saveImage = async () => {
+    if (selectedImageUri) {
+      try {
+        const fileUri = FileSystem.documentDirectory + `chat-image-${Date.now()}.jpg`;
+        const response = await fetch(selectedImageUri);
+        const blob = await response.blob();
+        await FileSystem.writeAsStringAsync(fileUri, blob, { encoding: FileSystem.EncodingType.Base64 });
+        Alert.alert('Image saved', 'The image has been saved to your device.');
+      } catch (error) {
+        console.error('Error saving image:', error);
+        Alert.alert('Error', 'Unable to save the image.');
+      }
+    }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <TouchableWithoutFeedback onPress={handleKeyboardDismiss}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.inner}
-        >
-          <View style={styles.header}>
-            {recipient.photoURL ? (
-              <Image
-                source={{ uri: recipient.photoURL }}
-                style={styles.userPhoto}
-              />
-            ) : (
-              <View style={styles.userPhotoPlaceholder} />
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Text style={styles.backButtonText}>Back</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{chatDetails.name || 'Chat'}</Text>
+        <Image source={{ uri: chatDetails.photoURL || 'default_photo_url' }} style={styles.headerImage} />
+      </View>
+      <FlatList
+        data={messages}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View>
+            {item.replyTo && (
+              <View style={styles.replyContainer}>
+                <Text style={styles.replyText}>Replying to: {messages.find(msg => msg.id === item.replyTo)?.text}</Text>
+              </View>
             )}
-            <Text style={styles.headerText}>{recipient.displayName || 'Unnamed User'}</Text>
-          </View>
-          <ScrollView
-            ref={scrollViewRef}
-            style={styles.scrollView}
-            contentContainerStyle={styles.scrollViewContent}
-            onScroll={handleScroll}
-            scrollEventThrottle={16}
-            onContentSizeChange={() => {
-              if (scrolling) {
-                scrollViewRef.current?.scrollToEnd({ animated: true });
-              }
-            }}
-          >
-            {messages.length === 0 ? (
-              <Text style={styles.emptyText}>No messages yet</Text>
-            ) : (
-              messages.map(renderMessageItem)
-            )}
-          </ScrollView>
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.textInput}
-              value={message}
-              onChangeText={setMessage}
-              placeholder="Type a message..."
-              multiline
-            />
             <TouchableOpacity
-              style={[styles.sendButton, sending && styles.sendingButton]}
-              onPress={handleSend}
-              disabled={sending}
+              onLongPress={() => handleReply(item)}
+              onPress={() => item.image && openImageModal(item.image)}
             >
-              {sending ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.sendButtonText}>Send</Text>
-              )}
+              <View
+                style={[
+                  styles.message,
+                  {
+                    alignSelf: item.senderEmail === currentUserEmail ? 'flex-end' : 'flex-start',
+                    backgroundColor: item.image ? 'transparent' : (item.senderEmail === currentUserEmail ? '#E0C55B' : '#FFF'),
+                  },
+                ]}
+              >
+                {item.text && <Text style={[
+                  styles.messageText,
+                  { color: item.senderEmail === currentUserEmail ? '#000' : '#000' }
+                ]}>{item.text}</Text>}
+                {item.image && <Image source={{ uri: item.image }} style={styles.messageImage} />}
+                <Text style={styles.messageTimestamp}>{formatTime(item.timestamp)}</Text>
+              </View>
             </TouchableOpacity>
           </View>
-        </KeyboardAvoidingView>
-      </TouchableWithoutFeedback>
-    </SafeAreaView>
+        )}
+      />
+      <View style={styles.inputContainer}>
+        {replyTo && (
+          <View style={styles.replyPreview}>
+            <Text style={styles.replyPreviewText}>Replying to: {replyTo.text}</Text>
+          </View>
+        )}
+        {imagePreviewUri && (
+          <View style={styles.imagePreviewContainer}>
+            <Image source={{ uri: imagePreviewUri }} style={styles.imagePreview} />
+            <TouchableOpacity onPress={() => setImagePreviewUri(null)} style={styles.removeImageButton}>
+              <Text style={styles.removeImageButtonText}>❌</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        <TouchableOpacity onPress={handleTakePhoto} style={styles.imageButton}>
+          <Text style={styles.imageButtonText}>📸</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={handleSelectImage} style={styles.imageButton}>
+          <Text style={styles.imageButtonText}>🖼️</Text>
+        </TouchableOpacity>
+        <TextInput
+          style={styles.input}
+          value={newMessage}
+          onChangeText={setNewMessage}
+          placeholder="Type a message"
+        />
+        <TouchableOpacity onPress={handleSend} style={styles.sendButton}>
+          <Text style={styles.sendButtonText}>Send</Text>
+        </TouchableOpacity>
+      </View>
+      {/* Image preview modal */}
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <Image source={{ uri: selectedImageUri }} style={styles.modalImage} />
+          <TouchableOpacity onPress={saveImage} style={styles.saveButton}>
+            <FontAwesome name="save" size={24} color="white" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.closeButton}>
+            <MaterialIcons name="close" size={24} color="white" />
+          </TouchableOpacity>
+        </View>
+      </Modal>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#E5E5E5',
-  },
-  inner: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingBottom: 10,
+    backgroundColor: '#F5F5F5',
+    paddingTop: 10,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 15,
-    borderBottomColor: '#ddd',
-    borderBottomWidth: 1,
-    backgroundColor: '#E5E5E5',
-  },
-  userPhoto: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 15,
-  },
-  userPhotoPlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#ddd',
-    marginRight: 15,
-  },
-  headerText: {
-    fontSize: 18,
-    color: '#333',
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollViewContent: {
-    flexGrow: 1,
-    justifyContent: 'flex-end',
-    paddingBottom: 10,
-  },
-  messageItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    marginBottom: 10,
-  },
-  messageBubble: {
     padding: 10,
-    borderRadius: 20,
-    maxWidth: '75%',
+    backgroundColor: '#F5F5F5',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
   },
-  sentMessage: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#E0C55B',
-    borderRadius: 20,
+  backButton: {
+    padding: 10,
   },
-  receivedMessage: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#FFF',
-    borderColor: '#ddd',
+  backButtonText: {
+    fontSize: 18,
+    color: '#007BFF',
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerImage: {
+    width: 40,
+    height: 40,
     borderRadius: 20,
-    borderWidth: 1,
+    marginLeft: 10,
+  },
+  message: {
+    padding: 10,
+    borderRadius: 25,
+    margin: 5,
+    maxWidth: '80%',
   },
   messageText: {
-    fontSize: 16,
-    color: '#000',
+    fontSize: 13,
+  },
+  messageImage: {
+    width: 200,
+    height: 200,
+    borderRadius: 10,
+    marginTop: 5,
   },
   messageTimestamp: {
     fontSize: 12,
     color: '#888',
     textAlign: 'right',
-    marginTop: 5,
-  },
-  messagePhoto: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    marginHorizontal: 5,
   },
   inputContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
     padding: 10,
-    borderTopColor: '#ddd',
     borderTopWidth: 1,
-    backgroundColor: '#E5E5E5',
+    borderTopColor: '#ddd',
+    backgroundColor: '#F5F5F5',
   },
-  textInput: {
+  input: {
     flex: 1,
-    height: 40,
-    borderColor: '#ddd',
+    borderColor: '#ccc',
     borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 15,
-    backgroundColor: '#FFF',
+    borderRadius: 24,
+    padding: 10,
   },
   sendButton: {
-    marginLeft: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
     padding: 10,
-    backgroundColor: '#E0C55B',
-    borderRadius: 20,
-  },
-  sendingButton: {
-    backgroundColor: '#ccc',
+    backgroundColor: '#007BFF',
+    borderRadius: 15,
+    marginLeft: 10,
   },
   sendButtonText: {
     color: '#FFF',
     fontSize: 16,
   },
-  emptyText: {
-    textAlign: 'center',
-    color: '#999',
-    marginTop: 20,
+  replyContainer: {
+    padding: 10,
+    backgroundColor: '#F0F0F0',
+    borderRadius: 10,
+    margin: 5,
+    borderLeftWidth: 4,
+    borderLeftColor: '#007BFF',
+  },
+  replyText: {
+    fontSize: 12,
+    color: '#555',
+  },
+  replyPreview: {
+    padding: 10,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 5,
+    marginBottom: 5,
+  },
+  replyPreviewText: {
+    fontSize: 12,
+    color: '#000',
+  },
+  imageButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 10,
+  },
+  imageButtonText: {
+    fontSize: 24,
+  },
+  imagePreviewContainer: {
+    position: 'relative',
+    marginBottom: 10,
+  },
+  imagePreview: {
+    width: 100,
+    height: 100,
+    borderRadius: 10,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    backgroundColor: '#FFF',
+    borderRadius: 15,
+    padding: 5,
+  },
+  removeImageButtonText: {
+    fontSize: 18,
+    color: '#FF0000',
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    padding: 20,
+  },
+  modalImage: {
+    width: '100%',
+    height: '80%',
+    resizeMode: 'contain',
+  },
+  saveButton: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    backgroundColor: '#007BFF',
+    borderRadius: 50,
+    padding: 10,
+  },
+  closeButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    backgroundColor: '#FF0000',
+    borderRadius: 50,
+    padding: 10,
   },
 });
 

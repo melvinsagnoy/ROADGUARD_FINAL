@@ -321,9 +321,12 @@ const updateProfileImage = async (downloadURL) => {
           <FontAwesome name="star" size={24} color="black" />
           <Text style={styles.optionText}>Leaderboards</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.option} onPress={() => navigation.navigate('SendMessage', { recipient: { id: 'user_id', displayName: 'User Name', photoURL: 'user_photo_url' } })}>
-          <FontAwesome name="envelope" size={24} color="black" />
-          <Text style={styles.optionText}>Send Message</Text>
+        <TouchableOpacity
+          style={styles.option}
+          onPress={() => navigation.navigate('ChatList')} // Use 'ChatList' not 'ChatListScreen'
+        >
+          <FontAwesome name="comments" size={24} color="black" />
+          <Text style={styles.optionText}>Chats</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.option}

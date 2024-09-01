@@ -61,7 +61,7 @@ const RegisterScreen = ({ navigation }) => {
       setLoading(false);
       rotateAnim.stopAnimation();
       Alert.alert('Registration Successful', 'You have registered successfully!');
-      navigation.navigate('ProfileUpdate'); // Navigate to ProfileUpdateScreen
+      navigation.navigate('Passcode'); // Navigate to ProfileUpdateScreen
     } catch (error) {
       setLoading(false);
       rotateAnim.stopAnimation();
