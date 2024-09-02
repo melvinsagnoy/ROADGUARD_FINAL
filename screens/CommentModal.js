@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, FlatList, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, FlatList, Image, ActivityIndicator } from 'react-native';
 import { ref, set, onValue } from 'firebase/database';
 import { firestore, auth, database } from '../firebaseConfig'; // Ensure proper exports
 import { doc, getDoc } from 'firebase/firestore';
-import Icon from 'react-native-vector-icons/FontAwesome'; // Import the Icon component
+import Icon from 'react-native-vector-icons/FontAwesome';
 
 const CommentModal = ({ visible, onClose, postId }) => {
   const [comment, setComment] = useState('');
@@ -13,6 +13,8 @@ const CommentModal = ({ visible, onClose, postId }) => {
   const [replyingTo, setReplyingTo] = useState(null); // Track which comment is being replied to
   const [showReplyInput, setShowReplyInput] = useState(null); // Manage reply input visibility for each comment
   const [expandedReplies, setExpandedReplies] = useState({}); // Manage expanded replies state
+  const [commentLoading, setCommentLoading] = useState(false); // Loading state for submitting a comment
+  const [replyLoading, setReplyLoading] = useState({}); // Loading state for submitting a reply (per comment)
 
   useEffect(() => {
     if (!postId) {
@@ -62,29 +64,27 @@ const CommentModal = ({ visible, onClose, postId }) => {
 
   const handleSubmit = async () => {
     if (comment.trim()) {
+      setCommentLoading(true); // Start loading
+
       try {
         const currentUser = auth.currentUser;
-        console.log('Current user:', currentUser);
-
         if (!currentUser) {
           console.error('No user is currently logged in.');
+          setCommentLoading(false); // Stop loading
           return;
         }
 
         const userEmail = currentUser.email;
-        console.log('Current user email:', userEmail);
-
         const userDocRef = doc(firestore, `users/${userEmail}`);
         const userDoc = await getDoc(userDocRef);
 
         if (!userDoc.exists()) {
           console.error('User profile does not exist:', userEmail);
+          setCommentLoading(false); // Stop loading
           return;
         }
 
         const userData = userDoc.data();
-        console.log('Fetched user data:', userData);
-
         const newCommentRef = ref(database, `posts/${postId}/comments/${Date.now()}`);
 
         await set(newCommentRef, {
@@ -95,48 +95,45 @@ const CommentModal = ({ visible, onClose, postId }) => {
           replies: {} // Initialize replies field
         });
 
-        console.log('Comment added successfully.');
         setComment('');
         setSuccessMessage('Comment added successfully!');
         onClose();
 
         setTimeout(() => {
           setSuccessMessage('');
-          console.log('Success message cleared.');
         }, 3000);
       } catch (error) {
         console.error('Error adding comment:', error.message || error);
+      } finally {
+        setCommentLoading(false); // Stop loading
       }
     }
   };
 
   const handleReplySubmit = async (parentId) => {
     if (comment.trim()) {
+      setReplyLoading(prev => ({ ...prev, [parentId]: true })); // Start loading for this reply
+
       try {
         const currentUser = auth.currentUser;
-        console.log('Current user:', currentUser);
-
         if (!currentUser) {
           console.error('No user is currently logged in.');
+          setReplyLoading(prev => ({ ...prev, [parentId]: false })); // Stop loading
           return;
         }
 
         const userEmail = currentUser.email;
-        console.log('Current user email:', userEmail);
-
         const userDocRef = doc(firestore, `users/${userEmail}`);
         const userDoc = await getDoc(userDocRef);
 
         if (!userDoc.exists()) {
           console.error('User profile does not exist:', userEmail);
+          setReplyLoading(prev => ({ ...prev, [parentId]: false })); // Stop loading
           return;
         }
 
         const userData = userDoc.data();
-        console.log('Fetched user data:', userData);
-
-        // Use a Unix timestamp as reply ID
-        const replyId = Date.now().toString(); // Converts to string to avoid non-numeric characters
+        const replyId = Date.now().toString(); // Use a Unix timestamp as reply ID
 
         const replyRef = ref(database, `posts/${postId}/comments/${parentId}/replies/${replyId}`);
 
@@ -147,7 +144,6 @@ const CommentModal = ({ visible, onClose, postId }) => {
           profileImage: userData.photoURL || '',
         });
 
-        console.log('Reply added successfully.');
         setComment('');
         setReplyingTo(null); // Reset replying state
         setShowReplyInput(null); // Hide reply input
@@ -156,10 +152,11 @@ const CommentModal = ({ visible, onClose, postId }) => {
 
         setTimeout(() => {
           setSuccessMessage('');
-          console.log('Success message cleared.');
         }, 3000);
       } catch (error) {
         console.error('Error adding reply:', error.message || error);
+      } finally {
+        setReplyLoading(prev => ({ ...prev, [parentId]: false })); // Stop loading
       }
     }
   };
@@ -190,7 +187,6 @@ const CommentModal = ({ visible, onClose, postId }) => {
   );
 
   const renderComment = ({ item }) => {
-    // Get replies and limit to 3
     const replies = Object.values(item.replies || {});
     const visibleReplies = expandedReplies[item.id] ? replies : replies.slice(0, 3);
 
@@ -238,8 +234,13 @@ const CommentModal = ({ visible, onClose, postId }) => {
                   <TouchableOpacity
                     style={styles.sendButton}
                     onPress={() => handleReplySubmit(item.id)}
+                    disabled={replyLoading[item.id]} // Disable button when loading
                   >
-                    <Icon name="send" size={20} color="#E0C55B" />
+                    {replyLoading[item.id] ? (
+                      <ActivityIndicator size="small" color="#007AFF" />
+                    ) : (
+                      <Icon name="send" size={20} color="#007AFF" />
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>
@@ -254,11 +255,16 @@ const CommentModal = ({ visible, onClose, postId }) => {
                 />
                 {replies.length > 3 && (
                   <TouchableOpacity
-                    onPress={() => setExpandedReplies(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
-                    style={styles.viewMoreRepliesButton}
+                    style={styles.viewMoreButton}
+                    onPress={() => {
+                      setExpandedReplies(prevState => ({
+                        ...prevState,
+                        [item.id]: !prevState[item.id], // Toggle expansion state for the selected comment
+                      }));
+                    }}
                   >
-                    <Text style={styles.viewMoreRepliesText}>
-                      {expandedReplies[item.id] ? 'View Less Replies' : 'View More Replies'}
+                    <Text style={styles.viewMoreText}>
+                      {expandedReplies[item.id] ? 'View Less' : `View ${replies.length - 3} More Replies`}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -270,165 +276,189 @@ const CommentModal = ({ visible, onClose, postId }) => {
     );
   };
 
-  if (loading) {
-    return <Text>Loading...</Text>;
-  }
-
   return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={styles.modalContainer}>
-        <View style={styles.modalContent}>
+    <Modal
+      visible={visible}
+      onRequestClose={onClose}
+      animationType="slide"
+    >
+      <View style={styles.container}>
+        <Text style={styles.title}>Comments</Text>
+        {loading ? (
+          <ActivityIndicator size="large" color="#007AFF" />
+        ) : (
           <FlatList
             data={comments}
             renderItem={renderComment}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.commentsList}
+            ListEmptyComponent={<Text style={styles.noCommentsText}>No comments yet.</Text>}
           />
-          <View style={styles.commentInputContainer}>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Write a comment..."
-              value={comment}
-              onChangeText={setComment}
-            />
-            <TouchableOpacity
-              style={styles.sendButton}
-              onPress={handleSubmit}
-            >
-              <Icon name="send" size={20} color="#E0C55B" />
-            </TouchableOpacity>
-          </View>
-          {successMessage ? <Text style={styles.successMessage}>{successMessage}</Text> : null}
+        )}
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.textInput}
+            placeholder="Write a comment..."
+            value={comment}
+            onChangeText={setComment}
+          />
           <TouchableOpacity
-            style={styles.closeButton}
-            onPress={onClose}
+            style={styles.sendButton}
+            onPress={handleSubmit}
+            disabled={commentLoading} // Disable button when loading
           >
-            <Text style={styles.closeButtonText}>Close</Text>
+            {commentLoading ? (
+              <ActivityIndicator size="small" color="#007AFF" />
+            ) : (
+              <Icon name="send" size={20} color="#007AFF" />
+            )}
           </TouchableOpacity>
         </View>
+        <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+          <Text style={styles.closeButtonText}>Close</Text>
+        </TouchableOpacity>
       </View>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  modalContainer: {
+  container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  modalContent: {
-    width: '90%',
-    backgroundColor: '#fff',
-    borderRadius: 10,
     padding: 20,
+    backgroundColor: '#ffffff',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#007AFF',
+    marginBottom: 20,
   },
   commentContainer: {
     marginBottom: 15,
+    backgroundColor: '#f2f2f2',
+    padding: 10,
+    borderRadius: 8,
   },
   commentHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
   },
+  profileImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 10,
+  },
+  profileImagePlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ccc',
+    marginRight: 10,
+  },
   commentContent: {
-    marginLeft: 10,
     flex: 1,
   },
   commentAuthor: {
     fontWeight: 'bold',
+    color: '#007AFF',
   },
   commentText: {
-    marginVertical: 5,
+    color: '#000000',
+    marginTop: 5,
   },
   commentTime: {
     fontSize: 12,
-    color: '#888',
+    color: '#666666',
+    marginTop: 5,
   },
   replyButton: {
+    alignSelf: 'flex-start',
     marginTop: 5,
-    paddingVertical: 5,
   },
   replyButtonText: {
-    color: '#007BFF',
+    color: '#007AFF',
+    fontSize: 14,
   },
   replyContainer: {
-    marginLeft: 20,
     marginTop: 10,
+    paddingLeft: 50,
+    borderLeftWidth: 2,
+    borderLeftColor: '#007AFF',
+    paddingVertical: 5,
   },
   replyHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
   },
   replyContent: {
-    marginLeft: 10,
     flex: 1,
   },
   replyAuthor: {
     fontWeight: 'bold',
+    color: '#007AFF',
   },
   replyText: {
-    marginVertical: 5,
+    color: '#000000',
+    marginTop: 5,
   },
   replyTime: {
     fontSize: 12,
-    color: '#888',
+    color: '#666666',
+    marginTop: 5,
   },
   replyInputContainer: {
     marginTop: 10,
+  },
+  replyToLabel: {
+    color: '#666666',
+    marginBottom: 5,
   },
   replyInputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  replyToLabel: {
-    fontStyle: 'italic',
-    marginBottom: 5,
-  },
   textInput: {
     flex: 1,
-    borderColor: '#ddd',
-    borderWidth: 1,
-    borderRadius: 5,
-    padding: 10,
-    marginRight: 10,
+    height: 40,
+    backgroundColor: '#f2f2f2',
+    color: '#000000',
+    paddingHorizontal: 10,
+    borderRadius: 20,
   },
   sendButton: {
-    padding: 10,
+    marginLeft: 10,
   },
-  profileImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-  },
-  profileImagePlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#ddd',
-  },
-  commentsList: {
-    marginBottom: 20,
-  },
-  viewMoreRepliesButton: {
+  repliesList: {
     marginTop: 10,
   },
-  viewMoreRepliesText: {
-    color: '#007BFF',
+  viewMoreButton: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
   },
-  commentInputContainer: {
+  viewMoreText: {
+    color: '#007AFF',
+  },
+  inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  successMessage: {
-    color: 'green',
-    marginTop: 10,
+    marginTop: 20,
   },
   closeButton: {
     marginTop: 20,
+    alignItems: 'center',
+    padding: 10,
+    backgroundColor: '#f2f2f2',
+    borderRadius: 8,
   },
   closeButtonText: {
-    color: '#007BFF',
+    color: '#007AFF',
+    fontSize: 18,
+  },
+  noCommentsText: {
+    textAlign: 'center',
+    color: '#666666',
+    marginTop: 20,
   },
 });
 

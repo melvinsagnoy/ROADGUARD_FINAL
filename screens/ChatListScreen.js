@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, Image, Alert } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, Image, Alert, TouchableWithoutFeedback } from 'react-native';
 import { ref, onValue, get, set, update, remove } from 'firebase/database';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
@@ -7,6 +7,7 @@ import { database, firestore } from '../firebaseConfig'; // Adjust path as neede
 import { useNavigation } from '@react-navigation/native';
 import { Swipeable } from 'react-native-gesture-handler';
 import Animated from 'react-native-reanimated';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const sanitizeId = (id) => id.replace(/[.#$[\]]/g, '_');
 
@@ -143,10 +144,10 @@ const ChatListScreen = () => {
     navigation.navigate('ChatScreen', { chatId });
   };
 
-  const handleDeleteChat = (chatId) => {
+  const handleDeleteChat = async (chatId) => {
     Alert.alert(
       'Confirm Deletion',
-      'Are you sure you want to delete all messages in this chat?',
+      'This chat will be removed from your chat list but will remain in the database.',
       [
         {
           text: 'No',
@@ -156,16 +157,32 @@ const ChatListScreen = () => {
           text: 'Yes',
           onPress: async () => {
             try {
-              await remove(ref(database, `chats/${chatId}`));
-              console.log('Chat deleted');
+              // Update local state to remove the chat
+              const updatedChats = chats.filter(chat => chat.id !== chatId);
+              setChats(updatedChats);
+
+              // Store the deleted chat ID in AsyncStorage
+              const deletedChats = JSON.parse(await AsyncStorage.getItem('deletedChats')) || [];
+              if (!deletedChats.includes(chatId)) {
+                deletedChats.push(chatId);
+                await AsyncStorage.setItem('deletedChats', JSON.stringify(deletedChats));
+              }
+
+              console.log('Chat removed from chat list successfully');
             } catch (error) {
-              console.error('Error deleting chat:', error);
+              console.error('Error removing chat from chat list:', error);
             }
           },
         },
       ],
       { cancelable: true }
     );
+  };
+
+  const handleOutsidePress = () => {
+    if (isDropdownVisible) {
+      setIsDropdownVisible(false);
+    }
   };
 
   const renderRightActions = (chatId) => {
@@ -218,41 +235,43 @@ const ChatListScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Text style={styles.backButtonText}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Chat</Text>
-      </View>
-      <TextInput
-        style={styles.input}
-        value={searchTerm}
-        onChangeText={handleSearchChange}
-        placeholder="Search for users"
-      />
-      {isDropdownVisible && (
-        <FlatList
-          data={filteredUsers}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              onPress={() => handleStartChat(item)}
-              style={styles.userItem}
-            >
-              <Image source={{ uri: item.photoURL || 'default_photo_url' }} style={styles.userImage} />
-              <Text style={styles.userText}>{item.displayName || 'Unknown'}</Text>
-            </TouchableOpacity>
-          )}
-          style={styles.dropdown}
+    <TouchableWithoutFeedback onPress={handleOutsidePress}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Text style={styles.backButtonText}>Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Chat</Text>
+        </View>
+        <TextInput
+          style={styles.input}
+          value={searchTerm}
+          onChangeText={handleSearchChange}
+          placeholder="Search for users"
         />
-      )}
-      <FlatList
-        data={chats}
-        keyExtractor={(item) => item.id}
-        renderItem={renderChatItem}
-      />
-    </View>
+        {isDropdownVisible && (
+          <FlatList
+            data={filteredUsers}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                onPress={() => handleStartChat(item)}
+                style={styles.userItem}
+              >
+                <Image source={{ uri: item.photoURL || 'default_photo_url' }} style={styles.userImage} />
+                <Text style={styles.userText}>{item.displayName || 'Unknown'}</Text>
+              </TouchableOpacity>
+            )}
+            style={styles.dropdown}
+          />
+        )}
+        <FlatList
+          data={chats}
+          keyExtractor={(item) => item.id}
+          renderItem={renderChatItem}
+        />
+      </View>
+    </TouchableWithoutFeedback>
   );
 };
 
@@ -268,6 +287,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderBottomWidth: 1,
     borderBottomColor: '#ddd',
+    marginTop: 40
   },
   backButton: {
     padding: 10,
@@ -332,7 +352,7 @@ const styles = StyleSheet.create({
   },
   dropdown: {
     position: 'absolute',
-    top: 60,
+    top: 180,
     left: 10,
     right: 10,
     backgroundColor: '#FFF',

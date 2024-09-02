@@ -20,6 +20,7 @@ import EditPostModal from '../screens/EditPostModal';
 import ProfileUpdateScreen from '../screens/ProfileUpdateScreen';
 import ChatListScreen from '../screens/ChatListScreen';
 import ChatScreen from '../screens/ChatScreen';
+import PostDetail from '../screens/PostDetail';
 
 
 const Stack = createStackNavigator();
@@ -147,6 +148,11 @@ const AuthNavigator = ({ toggleTheme, isDarkTheme }) => {
         <Stack.Screen
           name="ChatScreen"
           component={ChatScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="PostDetail"
+          component={PostDetail}
           options={{ headerShown: false }}
         />
       </Stack.Navigator>

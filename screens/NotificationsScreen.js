@@ -5,6 +5,7 @@ import { ref, onValue } from 'firebase/database';
 import { collection, query, getDocs, Timestamp } from 'firebase/firestore'; // Import Timestamp
 import NavBar from './NavBar'; // Adjust the path according to your project structure
 import Icon from 'react-native-vector-icons/MaterialIcons'; // or any other icon library
+import { auth } from '../firebaseConfig'; 
 
 const NotificationsScreen = ({ navigation }) => {
   const [notifications, setNotifications] = useState([]);
@@ -12,63 +13,69 @@ const NotificationsScreen = ({ navigation }) => {
   const [notificationType, setNotificationType] = useState('hazard'); // Default to hazard notifications
 
   const fetchNotifications = useCallback(async () => {
-  setRefreshing(true);
-  if (notificationType === 'hazard') {
-    // Fetch hazard notifications from Realtime Database
-    const postsRef = ref(database, 'posts'); // Adjust path as needed
-    onValue(postsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const postsArray = Object.keys(data).map(key => {
-          const post = data[key];
-          // Use 'createdAt' for hazard notifications
-          const timestamp = typeof post.createdAt === 'string' ? new Date(post.createdAt).getTime() : null;
-          return {
-            id: key,
-            ...post,
-            type: 'hazard', // Add type to distinguish notifications
-            timestamp: !isNaN(timestamp) ? timestamp : null, // Set timestamp to null if invalid
-            imageURL: post.imageURL || 'https://via.placeholder.com/50', // Default placeholder
-          };
-        }).filter(post => post.timestamp !== null); // Filter out invalid timestamps
-        console.log('Parsed hazard posts array:', postsArray); // Add logging for debugging
-        setNotifications(postsArray);
-      }
+    setRefreshing(true);
+
+    const user = auth.currentUser;
+    if (!user) {
+      console.log('User is not authenticated');
       setRefreshing(false);
-    }, {
-      onlyOnce: true
-    });
-  } else if (notificationType === 'game') {
-    // Fetch game notifications from Firestore
-    const usersCollection = collection(firestore, 'users');
-    const q = query(usersCollection);
-    const querySnapshot = await getDocs(q);
-    const gameNotifications = querySnapshot.docs.flatMap(doc => {
-      const scores = doc.data().scores || [];
-      return Object.keys(scores).map(scoreKey => {
-        const scoreData = scores[scoreKey];
-        // Convert Firestore Timestamp to JavaScript Date
-        const timestamp = scoreData.timestamp instanceof Timestamp
-          ? scoreData.timestamp.toDate().getTime()
-          : new Date(scoreData.timestamp).getTime();
+      return;
+    }
 
-        return {
-          id: `${doc.id}-${scoreKey}`,
-          score: scoreData.score, // Extract the score from the sub-field
-          timestamp,
-          displayName: doc.data().displayName,
-          photoURL: doc.data().photoURL || 'https://via.placeholder.com/50', // Default placeholder
-          type: 'game' // Add type to distinguish notifications
-        };
-      });
-    });
-    setNotifications(gameNotifications);
-    setRefreshing(false);
-  }
-}, [notificationType]);
+    try {
+      if (notificationType === 'hazard') {
+        const postsRef = ref(database, 'posts');
+        onValue(postsRef, (snapshot) => {
+          const data = snapshot.val();
+          if (data) {
+            const postsArray = Object.keys(data).map(key => {
+              const post = data[key];
+              const timestamp = typeof post.createdAt === 'string' ? new Date(post.createdAt).getTime() : null;
+              return {
+                id: key,
+                ...post,
+                type: 'hazard',
+                timestamp: !isNaN(timestamp) ? timestamp : null,
+                imageURL: post.imageURL || 'https://via.placeholder.com/50',
+              };
+            }).filter(post => post.timestamp !== null);
+            console.log('Parsed hazard posts array:', postsArray);
+            setNotifications(postsArray);
+          }
+          setRefreshing(false);
+        }, {
+          onlyOnce: true
+        });
+      } else if (notificationType === 'game') {
+        const usersCollection = collection(firestore, 'users');
+        const q = query(usersCollection);
+        const querySnapshot = await getDocs(q);
+        const gameNotifications = querySnapshot.docs.flatMap(doc => {
+          const scores = doc.data().scores || [];
+          return Object.keys(scores).map(scoreKey => {
+            const scoreData = scores[scoreKey];
+            const timestamp = scoreData.timestamp instanceof Timestamp
+              ? scoreData.timestamp.toDate().getTime()
+              : new Date(scoreData.timestamp).getTime();
 
-
-
+            return {
+              id: `${doc.id}-${scoreKey}`,
+              score: scoreData.score,
+              timestamp,
+              displayName: doc.data().displayName,
+              photoURL: doc.data().photoURL || 'https://via.placeholder.com/50',
+              type: 'game'
+            };
+          });
+        });
+        setNotifications(gameNotifications);
+        setRefreshing(false);
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      setRefreshing(false);
+    }
+  }, [notificationType]);
 
   useEffect(() => {
     fetchNotifications();
@@ -143,46 +150,56 @@ const NotificationsScreen = ({ navigation }) => {
   };
 
   const renderNotification = ({ item }) => (
-  <View style={styles.notification}>
-    <Icon
-      name={item.type === 'hazard' ? 'warning' : 'gamepad'}
-      size={30}
-      color={item.type === 'hazard' ? 'red' : 'green'}
-      style={styles.icon}
-    />
-    <Image
-      source={{ uri: item.type === 'hazard' ? item.imageURL : item.photoURL || 'https://via.placeholder.com/50' }}
-      style={styles.profileImage}
-    />
-    <View style={styles.textContainer}>
-      <Text style={styles.title}>{item.displayName || 'System'}</Text>
-      {item.type === 'game' && <Text style={styles.body}>Scores {item.score} playing RoadGuard Racer</Text>}
-      {item.type === 'hazard' && <Text style={styles.body}>{item.body}</Text>}
-      <Text style={styles.time}>
-        {item.type === 'hazard'
-          ? calculateHazardTimeAgo(item.timestamp)
-          : calculateGameTimeAgo(item.timestamp)}
-      </Text>
-    </View>
-  </View>
-);
-
+    <TouchableOpacity 
+      style={styles.notification} 
+      onPress={() => navigation.navigate('PostDetail', { postId: item.id })}
+    >
+      <Icon
+        name={item.type === 'hazard' ? 'warning' : 'gamepad'}
+        size={30}
+        color={item.type === 'hazard' ? 'red' : 'green'}
+        style={styles.icon}
+      />
+      <Image
+        source={{ uri: item.type === 'hazard' ? item.imageURL : item.photoURL || 'https://via.placeholder.com/50' }}
+        style={styles.profileImage}
+      />
+      <View style={styles.textContainer}>
+        <Text style={styles.title}>{item.displayName || 'System'}</Text>
+        {item.type === 'game' && <Text style={styles.body}>Scores {item.score} playing RoadGuard Racer</Text>}
+        {item.type === 'hazard' && <Text style={styles.body}>{item.body}</Text>}
+        <Text style={styles.time}>
+          {item.type === 'hazard'
+            ? calculateHazardTimeAgo(item.timestamp)
+            : calculateGameTimeAgo(item.timestamp)}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity
-          style={[styles.button, notificationType === 'hazard' && styles.activeButton]}
-          onPress={() => setNotificationType('hazard')}
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
         >
-          <Icon name="warning" size={30} color={notificationType === 'hazard' ? '#FFF' : '#000'} />
+          <Icon name="arrow-back" size={30} color="#000" />
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.button, notificationType === 'game' && styles.activeButton]}
-          onPress={() => setNotificationType('game')}
-        >
-          <Icon name="gamepad" size={30} color={notificationType === 'game' ? '#FFF' : '#000'} />
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={[styles.button, notificationType === 'hazard' && styles.activeButton]}
+            onPress={() => setNotificationType('hazard')}
+          >
+            <Icon name="warning" size={30} color={notificationType === 'hazard' ? '#FFF' : '#000'} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.button, notificationType === 'game' && styles.activeButton]}
+            onPress={() => setNotificationType('game')}
+          >
+            <Icon name="gamepad" size={30} color={notificationType === 'game' ? '#FFF' : '#000'} />
+          </TouchableOpacity>
+        </View>
       </View>
       <FlatList
         data={notifications}
@@ -209,7 +226,7 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    alignItems: 'center',
     padding: 15,
     backgroundColor: '#F5F5F5',
     borderBottomWidth: 1,
@@ -219,6 +236,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+  },
+  backButton: {
+    padding: 10,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    flex: 1,
   },
   button: {
     padding: 10,

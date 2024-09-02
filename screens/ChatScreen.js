@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, Image, Alert, Modal, Button } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, Image, Alert, Modal, ActivityIndicator } from 'react-native';
 import { ref, onValue, push, set, get } from 'firebase/database';
 import { getAuth } from 'firebase/auth';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -7,8 +7,8 @@ import { database } from '../firebaseConfig';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
-import { formatDistanceToNow, parseISO } from 'date-fns';
-import { FontAwesome, MaterialIcons } from '@expo/vector-icons'; // Import icons
+import { format, parseISO } from 'date-fns';
+import { FontAwesome, MaterialIcons } from '@expo/vector-icons';
 
 const getCurrentUserEmail = () => {
   const auth = getAuth();
@@ -36,22 +36,29 @@ const ChatScreen = ({ route }) => {
   const [imagePreviewUri, setImagePreviewUri] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedImageUri, setSelectedImageUri] = useState(null);
+  const [sending, setSending] = useState(false);
   const navigation = useNavigation();
+  const flatListRef = useRef(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+
+  const checkIfAtBottom = (contentOffsetY, contentHeight, layoutHeight) => {
+    return contentOffsetY + layoutHeight >= contentHeight - 20; // Threshold for padding
+  };
 
   useEffect(() => {
     const messagesRef = ref(database, `chats/${chatId}/messages`);
-
     const unsubscribe = onValue(messagesRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        const messageList = Object.entries(data).map(([id, message]) => ({ id, ...message }));
-        messageList.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        const messageList = Object.entries(data)
+          .map(([id, message]) => ({ id, ...message }))
+          .filter(message => !message.deleted && (message.senderEmail === currentUserEmail || message.senderEmail !== currentUserEmail))
+          .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
         setMessages(messageList);
       } else {
         setMessages([]);
       }
     });
-
     return () => unsubscribe();
   }, [chatId]);
 
@@ -61,56 +68,67 @@ const ChatScreen = ({ route }) => {
       const data = snapshot.val();
       setChatDetails(data || {});
     });
-
     return () => unsubscribe();
   }, [chatId]);
 
-  const handleSend = async () => {
-  if (newMessage.trim() || imagePreviewUri) {
-    try {
-      let imageUrl = null;
-      if (imagePreviewUri) {
-        imageUrl = await uploadImageToStorage(imagePreviewUri);
-      }
-
-      // Set the message text to 'Sent a Photo' if an image is included
-      const messageText = imagePreviewUri ? 'Sent a Photo' : newMessage;
-
-      const messageData = {
-        text: messageText,
-        image: imageUrl,
-        senderEmail: currentUserEmail,
-        timestamp: new Date().toISOString(),
-        replyTo: replyTo ? replyTo.id : null,
-      };
-
-      const messagesRef = ref(database, `chats/${chatId}/messages`);
-      const newMessageRef = push(messagesRef);
-      await set(newMessageRef, messageData);
-
-      const chatRef = ref(database, `chats/${chatId}`);
-      const chatSnapshot = await get(chatRef);
-      const chatData = chatSnapshot.val();
-
-      await set(chatRef, {
-        ...chatData,
-        lastMessage: {
-          ...messageData,
-          timestamp: new Date().toISOString(),
-        },
-      });
-
-      setNewMessage('');
-      setImagePreviewUri(null);
-      setReplyTo(null);
-    } catch (error) {
-      console.error('Error sending message:', error);
+  useEffect(() => {
+    if (isAtBottom) {
+      flatListRef.current?.scrollToEnd({ animated: true });
     }
-  }
-};
+  }, [messages]);
+
+  const handleScroll = (event) => {
+    const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
+    const isAtBottomNow = checkIfAtBottom(contentOffset.y, contentSize.height, layoutMeasurement.height);
+    setIsAtBottom(isAtBottomNow);
+  };
+
+  const handleSend = async () => {
+    if (newMessage.trim() || imagePreviewUri) {
+      setSending(true);
+      try {
+        let imageUrl = null;
+        if (imagePreviewUri) {
+          imageUrl = await uploadImageToStorage(imagePreviewUri);
+        }
+
+        const messageText = imagePreviewUri ? 'Sent a Photo' : newMessage;
+        const messageData = {
+          text: messageText,
+          image: imageUrl,
+          senderEmail: currentUserEmail,
+          timestamp: new Date().toISOString(),
+          replyTo: replyTo ? replyTo.id : null,
+        };
+
+        const messagesRef = ref(database, `chats/${chatId}/messages`);
+        const newMessageRef = push(messagesRef);
+        await set(newMessageRef, messageData);
+
+        const chatRef = ref(database, `chats/${chatId}`);
+        const chatSnapshot = await get(chatRef);
+        const chatData = chatSnapshot.val();
+
+        await set(chatRef, {
+          ...chatData,
+          lastMessage: {
+            ...messageData,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
+        setNewMessage('');
+        setImagePreviewUri(null);
+        setReplyTo(null);
+      } catch (error) {
+        console.error('Error sending message:', error);
+      } finally {
+        setSending(false);
+      }
+    }
+  };
 
   const handleReply = (message) => {
-    setNewMessage(`Replying to: ${message.text}`);
     setReplyTo(message);
   };
 
@@ -154,7 +172,7 @@ const ChatScreen = ({ route }) => {
   };
 
   const formatTime = (timestamp) => {
-    return formatDistanceToNow(parseISO(timestamp), { addSuffix: true });
+    return format(parseISO(timestamp), 'hh:mm a');
   };
 
   const openImageModal = (uri) => {
@@ -186,7 +204,16 @@ const ChatScreen = ({ route }) => {
         <Text style={styles.headerTitle}>{chatDetails.name || 'Chat'}</Text>
         <Image source={{ uri: chatDetails.photoURL || 'default_photo_url' }} style={styles.headerImage} />
       </View>
+
+      {/* Show replying to message above the input area */}
+      {replyTo && (
+        <View style={styles.replyPreview}>
+          <Text style={styles.replyPreviewText}>Replying to: {replyTo.text}</Text>
+        </View>
+      )}
+
       <FlatList
+        ref={flatListRef}
         data={messages}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
@@ -209,23 +236,26 @@ const ChatScreen = ({ route }) => {
                   },
                 ]}
               >
-                {item.text && <Text style={[
-                  styles.messageText,
-                  { color: item.senderEmail === currentUserEmail ? '#000' : '#000' }
-                ]}>{item.text}</Text>}
+                {item.text && (
+                  <Text style={[styles.messageText, { color: item.senderEmail === currentUserEmail ? '#000' : '#000' }]}>
+                    {item.text}
+                  </Text>
+                )}
                 {item.image && <Image source={{ uri: item.image }} style={styles.messageImage} />}
                 <Text style={styles.messageTimestamp}>{formatTime(item.timestamp)}</Text>
               </View>
             </TouchableOpacity>
           </View>
         )}
+        onScroll={handleScroll}
+        onContentSizeChange={() => {
+          if (isAtBottom) {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }
+        }}
       />
+
       <View style={styles.inputContainer}>
-        {replyTo && (
-          <View style={styles.replyPreview}>
-            <Text style={styles.replyPreviewText}>Replying to: {replyTo.text}</Text>
-          </View>
-        )}
         {imagePreviewUri && (
           <View style={styles.imagePreviewContainer}>
             <Image source={{ uri: imagePreviewUri }} style={styles.imagePreview} />
@@ -246,11 +276,11 @@ const ChatScreen = ({ route }) => {
           onChangeText={setNewMessage}
           placeholder="Type a message"
         />
-        <TouchableOpacity onPress={handleSend} style={styles.sendButton}>
-          <Text style={styles.sendButtonText}>Send</Text>
+        <TouchableOpacity onPress={handleSend} style={styles.sendButton} disabled={sending}>
+          {sending ? <ActivityIndicator color="#E0C55B" /> : <MaterialIcons name="send" size={24} color="#E0C55B" />}
         </TouchableOpacity>
       </View>
-      {/* Image preview modal */}
+
       <Modal
         visible={modalVisible}
         transparent={true}
@@ -284,6 +314,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
     borderBottomWidth: 1,
     borderBottomColor: '#ddd',
+    marginTop: 30
   },
   backButton: {
     padding: 10,
@@ -342,13 +373,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 10,
-    backgroundColor: '#007BFF',
+    backgroundColor: '#F5F5F5',
     borderRadius: 15,
     marginLeft: 10,
-  },
-  sendButtonText: {
-    color: '#FFF',
-    fontSize: 16,
   },
   replyContainer: {
     padding: 10,
@@ -367,6 +394,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#E0E0E0',
     borderRadius: 5,
     marginBottom: 5,
+    borderWidth: 1,
+    borderColor: '#ccc',
   },
   replyPreviewText: {
     fontSize: 12,
@@ -385,21 +414,21 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   imagePreview: {
-    width: 100,
-    height: 100,
+    width: 70,
+    height: 70,
     borderRadius: 10,
   },
   removeImageButton: {
     position: 'absolute',
     top: 0,
     right: 0,
-    backgroundColor: '#FFF',
+    backgroundColor: 'transparent',
     borderRadius: 15,
     padding: 5,
   },
   removeImageButtonText: {
     fontSize: 18,
-    color: '#FF0000',
+    color: '#E0C55B',
   },
   modalContainer: {
     flex: 1,
